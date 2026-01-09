@@ -32,6 +32,9 @@ Examples:
   # Run with Triton backend
   ai-bench --xpu --bench --triton
 
+  # Run with Helion backend
+  ai-bench --xpu --bench --helion
+
   # Save results to CSV
   ai-bench --xpu --bench --csv results.csv --note "baseline run"
 
@@ -95,6 +98,12 @@ Environment file (.env) example:
         default=None,
         help="Path to Triton kernels directory (default: auto-detect or AIBENCH_TRITON_KERNELS_DIR)",
     )
+    path_group.add_argument(
+        "--helion-kernels-dir",
+        type=Path,
+        default=None,
+        help="Path to Helion kernels directory (default: auto-detect or AIBENCH_HELION_KERNELS_DIR)",
+    )
 
     # Device options
     device_group = parser.add_argument_group("device options")
@@ -125,6 +134,12 @@ Environment file (.env) example:
         action="store_true",
         default=False,
         help="Use PyTorch compile mode",
+    )
+    backend_exclusive.add_argument(
+        "--helion",
+        action="store_true",
+        default=False,
+        help="Use Helion backend",
     )
 
     # Run mode
@@ -191,11 +206,17 @@ def main(argv: list[str] | None = None) -> int:
             finder.load_env()  # Auto-detect
 
     # Configure paths if provided
-    if args.specs_dir or args.kernels_dir or args.triton_kernels_dir:
+    if (
+        args.specs_dir
+        or args.kernels_dir
+        or args.triton_kernels_dir
+        or args.helion_kernels_dir
+    ):
         finder.configure(
             specs_dir=args.specs_dir,
             kernels_dir=args.kernels_dir,
             triton_kernels_dir=args.triton_kernels_dir,
+            helion_kernels_dir=args.helion_kernels_dir,
         )
 
     # Determine device
@@ -209,6 +230,8 @@ def main(argv: list[str] | None = None) -> int:
     # Determine backend
     if args.triton:
         backend = core.Backend.TRITON
+    elif args.helion:
+        backend = core.Backend.HELION
     elif args.torch_compile:
         backend = core.Backend.PYTORCH_COMPILE
     else:
