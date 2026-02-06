@@ -2,6 +2,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 import types
+import warnings
 
 import torch
 import yaml
@@ -193,7 +194,13 @@ class KernelRunner:
             model = model_obj(*model_inits).to(self.device, dtype=model_dtype)
 
             if self.backend == ai_hc.Backend.PYTORCH_COMPILE:
-                model.compile(dynamic=False)
+                with warnings.catch_warnings():
+                    warnings.filterwarnings(
+                        "ignore",
+                        "`torch.jit.script_method` is deprecated",
+                        category=DeprecationWarning,
+                    )
+                    model.compile(dynamic=False)
 
             # Call model directly to avoid skipping extra hooks if present.
             # It allows 'torch.compile' decorator to be invoked correctly.

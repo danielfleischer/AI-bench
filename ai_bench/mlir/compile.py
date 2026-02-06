@@ -3,6 +3,7 @@ from collections.abc import Sequence
 import contextlib
 from dataclasses import dataclass
 import os
+import warnings
 
 from lighthouse import utils as lh_utils
 from lighthouse.ingress.torch import import_from_model
@@ -261,7 +262,8 @@ class MLIRBackend:
 
         # Suppress importer's messages.
         # 'torch_mlir' prints to STDOUT which can be noisy.
-        with contextlib.redirect_stdout(None):
+        with contextlib.redirect_stdout(None), warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=FutureWarning)
             mlir_mod = import_from_model(
                 model,
                 sample_args=example_inputs,
