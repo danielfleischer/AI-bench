@@ -112,15 +112,16 @@ def lower_to_llvm(module: ir.Module) -> ir.Module:
     Returns:
         MLIR module with lowered IR.
     """
+    # Apply initial transformations using schedule.
+    sched = tile_and_vector_gemm(module.context)
+    sched.body.operations[0].apply(module)
+
+    # Build pipeline.
     pm = PassManager("builtin.module", module.context)
 
     # Preprocess.
     # Use standard C interface wrappers for functions.
     pm.add("func.func(llvm-request-c-wrappers)")
-
-    # Apply schedule.
-    sched = tile_and_vector_gemm(module.context)
-    sched.body.operations[0].apply(module)
 
     # Bufferize.
     pm.add("eliminate-empty-tensors")
