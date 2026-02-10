@@ -79,7 +79,7 @@ class JITFunction:
 
         # Prepare arguments according to MLIR backend's calling convention:
         # input data followed by output storage buffers.
-        mlir_args = list(args)
+        mlir_args = [arg.detach() for arg in args]
         mlir_args.extend(outs)
         mlir_args = lh_utils.torch.to_packed_args(mlir_args)
         self.fn(mlir_args)
