@@ -148,6 +148,149 @@ class KernelRunner:
         self.print_info_legend(print_fn)
         print_fn("-" * 60)
 
+    def load_spec(self, spec_path: Path) -> dict:
+        """Load problem spec.
+        Args:
+            spec_path: Path to problem spec '.yaml' file
+        Returns:
+            Problem spec descriptor
+        """
+        with open(spec_path) as f:
+            spec = yaml.safe_load(f)
+        return spec
+
+    def get_spec_variants(self, spec: dict) -> list[dict]:
+        """Get problem variants for current spec type.
+        Args:
+            spec: Problem spec
+        Returns:
+            Defined spec type variants
+        """
+        return spec[self.spec_type]
+
+    def get_spec_inputs(self, spec: dict) -> dict:
+        """Get problem inputs.
+        Args:
+            spec: Problem spec
+        Returns:
+            Defined problem inputs
+        """
+        return spec[ai_hc.SpecKey.INS]
+
+    def get_spec_inits(self, spec: dict) -> list[dict]:
+        """Get problem inits.
+        Args:
+            spec: Problem spec
+        Returns:
+            Defined problem inits
+        """
+        if ai_hc.SpecKey.INITS in spec:
+            return spec[ai_hc.SpecKey.INITS]
+        return []
+
+    def init_model(
+        self, model_obj: types.ModuleType, variant: dict, inits: list[dict]
+    ) -> torch.nn.Module:
+        """Initialize model for given variant.
+        Args:
+            model_obj: Loaded base model
+            variant: Specs' variant entry
+            spec_inits: Specs' inits entry
+        Returns:
+            PyTorch model
+        """
+        model_inits = ai_hc.get_inits(variant, inits)
+        model_dtype = ai_hc.get_variant_torch_dtype(variant)
+        return model_obj(*model_inits).to(self.device, dtype=model_dtype)
+
+    def benchmark_model(self, variant, model, args) -> KernelStats:
+        """Gather model's performance.
+        Args:
+            variant: Specs' variant entry
+            model: PyTorch model
+            args: Arguments to pass to the model
+        Returns:
+            Performance statistics
+        """
+        # Call model directly to avoid skipping extra hooks if present.
+        # It allows 'torch.compile' decorator to be invoked correctly.
+        fn = model
+
+        # Measure performance.
+        meas_us = testing.time(
+            fn, args, warmup=self.warmup, rep=self.rep, device=self.device
+        )
+
+        # Statistics - FLOPs.
+        flop = ai_hc.get_flop(variant)
+        flop_is_estimate = False
+        if not flop and self.is_torch_backend():
+            flop = ai_utils.count_torch_flop(fn, args)
+            flop_is_estimate = True
+
+        flops_val = None
+        flops_unit = None
+        flops_note = None
+        if flop:
+            tflops = flop / meas_us / 1e6
+            match self.flops_unit:
+                case config.FlopsUnit.TFLOPS:
+                    flops_val = tflops
+                case config.FlopsUnit.GFLOPS:
+                    flops_val = tflops * 1000
+                case _:
+                    raise ValueError(f"Invalid FLOPS unit: {self.flops_unit}")
+            flops_unit = str(self.flops_unit)
+            if flop_is_estimate:
+                flops_note = config.NotesSymbols.ESTIMATE
+
+        self.logger.info(
+            f"  time [us]: {meas_us:.6f} {str(flops_unit or '')}: {str(flops_val or '')} {str(flops_note or '')}"
+        )
+
+        # Statistics - memory bandwidth.
+        mem_bytes = ai_hc.get_mem_bytes(variant)
+        mem_is_estimate = False
+        if not mem_bytes and self.is_torch_backend():
+            mem_bytes = ai_utils.count_torch_memory_bytes(model, args)
+            mem_is_estimate = True
+
+        mem_bw_val = None
+        mem_bw_unit = None
+        mem_note = None
+        if mem_bytes:
+            gbs = mem_bytes / meas_us / 1e3
+            match self.mem_bw_unit:
+                case config.MemBwUnit.GBS:
+                    mem_bw_val = gbs
+                case config.MemBwUnit.MBS:
+                    mem_bw_val = gbs * 1000
+                case _:
+                    raise ValueError(
+                        f"Invalid memory bandwidth unit: {self.mem_bw_unit}"
+                    )
+            mem_bw_unit = str(self.mem_bw_unit)
+            if mem_is_estimate:
+                mem_note = config.NotesSymbols.ESTIMATE
+
+            self.logger.info(
+                f"  {str(mem_bw_unit or '')}: {str(mem_bw_val or '')} {str(mem_note or '')}"
+            )
+
+        kernel_stats = KernelStats(
+            variant=variant,
+            meas_us=meas_us,
+            flop=flop,
+            flops=flops_val,
+            flops_unit=flops_unit,
+            flops_note=flops_note,
+            mem_bytes=mem_bytes,
+            mem_bw=mem_bw_val,
+            mem_bw_unit=mem_bw_unit,
+            mem_note=mem_note,
+        )
+        return kernel_stats
+
     def run_kernel_spec(
         self, kernel_path: Path | str, spec_path: Path | str
     ) -> list[KernelStats] | None:
@@ -165,120 +308,39 @@ class KernelRunner:
         if isinstance(spec_path, str):
             spec_path = Path(spec_path)
 
-        with open(spec_path) as f:
-            spec = yaml.safe_load(f)
+        spec = self.load_spec(spec_path)
         # Bail if desired configuration is not available.
         if self.spec_type not in spec:
             return None
-        variants = spec[self.spec_type]
-        inputs = spec[ai_hc.SpecKey.INS]
-        inits = []
-        if ai_hc.SpecKey.INITS in spec:
-            inits = spec[ai_hc.SpecKey.INITS]
 
         # Import kernel file to access underlying Model and execution method.
         model_obj = self.load_model(kernel_path)
         if not model_obj:
             self.logger.debug(f"Missing kernel for: {kernel_path.name}")
             return None
+        spec_variants = self.get_spec_variants(spec)
+        spec_inputs = self.get_spec_inputs(spec)
+        spec_inits = self.get_spec_inits(spec)
 
         # Run the kernel with provided input configurations.
         self.logger.info(
             f"Kernel: {spec_path.parent.name} / {spec_path.name} [{self.backend}]"
         )
         stats = []
-        for variant in variants:
-            model_inits = ai_hc.get_inits(variant, inits)
-            model_dtype = ai_hc.get_variant_torch_dtype(variant)
-            model = model_obj(*model_inits).to(self.device, dtype=model_dtype)
-
+        for variant in spec_variants:
+            model = self.init_model(model_obj, variant, spec_inits)
             if self.backend == ai_hc.Backend.PYTORCH_COMPILE:
                 model.compile(dynamic=False)
-
-            # Call model directly to avoid skipping extra hooks if present.
-            # It allows 'torch.compile' decorator to be invoked correctly.
-            fn = model
-            args = ai_hc.get_inputs(variant, inputs, device=self.device)
+            args = ai_hc.get_inputs(variant, spec_inputs, device=self.device)
 
             # Simple CI run to verify functionality.
             if self.spec_type == ai_hc.SpecKey.V_CI:
                 self.logger.info(f"Validating: {variant}")
-                fn(*args)
+                model(*args)
                 continue
 
             self.logger.info(f"Benchmarking: {variant}")
-            meas_us = testing.time(
-                fn, args, warmup=self.warmup, rep=self.rep, device=self.device
-            )
-
-            # Statistics - FLOPs.
-            flop = ai_hc.get_flop(variant)
-            flop_is_estimate = False
-            if not flop and self.is_torch_backend():
-                flop = ai_utils.count_torch_flop(fn, args)
-                flop_is_estimate = True
-
-            flops_val = None
-            flops_unit = None
-            flops_note = None
-            if flop:
-                tflops = flop / meas_us / 1e6
-                match self.flops_unit:
-                    case config.FlopsUnit.TFLOPS:
-                        flops_val = tflops
-                    case config.FlopsUnit.GFLOPS:
-                        flops_val = tflops * 1000
-                    case _:
-                        raise ValueError(f"Invalid FLOPS unit: {self.flops_unit}")
-                flops_unit = str(self.flops_unit)
-                if flop_is_estimate:
-                    flops_note = config.NotesSymbols.ESTIMATE
-
-            self.logger.info(
-                f"  time [us]: {meas_us:.6f} {str(flops_unit or '')}: {str(flops_val or '')} {str(flops_note or '')}"
-            )
-
-            # Statistics - memory bandwidth.
-            mem_bytes = ai_hc.get_mem_bytes(variant)
-            mem_is_estimate = False
-            if not mem_bytes and self.is_torch_backend():
-                mem_bytes = ai_utils.count_torch_memory_bytes(model, args)
-                mem_is_estimate = True
-
-            mem_bw_val = None
-            mem_bw_unit = None
-            mem_note = None
-            if mem_bytes:
-                gbs = mem_bytes / meas_us / 1e3
-                match self.mem_bw_unit:
-                    case config.MemBwUnit.GBS:
-                        mem_bw_val = gbs
-                    case config.MemBwUnit.MBS:
-                        mem_bw_val = gbs * 1000
-                    case _:
-                        raise ValueError(
-                            f"Invalid memory bandwidth unit: {self.mem_bw_unit}"
-                        )
-                mem_bw_unit = str(self.mem_bw_unit)
-                if mem_is_estimate:
-                    mem_note = config.NotesSymbols.ESTIMATE
-
-                self.logger.info(
-                    f"  {str(mem_bw_unit or '')}: {str(mem_bw_val or '')} {str(mem_note or '')}"
-                )
-
-            kernel_stats = KernelStats(
-                variant=variant,
-                meas_us=meas_us,
-                flop=flop,
-                flops=flops_val,
-                flops_unit=flops_unit,
-                flops_note=flops_note,
-                mem_bytes=mem_bytes,
-                mem_bw=mem_bw_val,
-                mem_bw_unit=mem_bw_unit,
-                mem_note=mem_note,
-            )
+            kernel_stats = self.benchmark_model(variant, model, args)
             stats.append(kernel_stats)
 
         # Report statistics for all variants
