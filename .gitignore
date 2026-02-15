@@ -4,3 +4,4 @@ uv.lock
 .env
 .env*.local
 tests/output
+/build/
