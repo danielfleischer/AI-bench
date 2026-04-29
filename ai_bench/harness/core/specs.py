@@ -78,6 +78,8 @@ class Backend(StrEnum):
     TRITON = "triton"
     HELION = "helion"
     MLIR = "mlir"
+    GLUON = "gluon"
+    SYCL = "sycl"
 
 
 # Default tolerance values (match current hardcoded behavior).
