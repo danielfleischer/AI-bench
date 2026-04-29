@@ -8,25 +8,31 @@ dynamic = ["version"]
 requires-python = ">=3.10"
 description = "AI kernel benchmarking harness"
 readme = "README.md"
-license = {text = "MIT"}
+license = { text = "MIT" }
 authors = [
-    {name = "Adam Siemieniuk", email = "adam.siemieniuk@intel.com"},
-    {name = "Marcin Spoczynski", email = "marcin@spoczynski.com"}
+  { name = "Adam Siemieniuk", email = "adam.siemieniuk@intel.com" },
+  { name = "Marcin Spoczynski", email = "marcin@spoczynski.com" },
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Developers",
-    "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-    "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "Topic :: System :: Benchmark",
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+  "Topic :: System :: Benchmark",
 ]
 keywords = [
-  "benchmark", "pytorch", "triton", "helion",
-  "gpu", "xpu", "kernel", "performance"
+  "benchmark",
+  "pytorch",
+  "triton",
+  "helion",
+  "gpu",
+  "xpu",
+  "kernel",
+  "performance",
 ]
 dependencies = [
   "PyYAML",
@@ -46,24 +52,15 @@ Homepage = "https://github.com/libxsmm/AI-bench"
 Repository = "https://github.com/libxsmm/AI-bench"
 
 [project.optional-dependencies]
-cpu = [
-  "torch==2.9.1+cpu",
-]
-xpu = [
-  "torch==2.9.1+xpu",
-  "pytorch-triton-xpu",
-  "helion==1.0.0",
-]
+cpu = ["torch==2.9.1+cpu"]
+xpu = ["torch==2.9.1+xpu", "pytorch-triton-xpu", "helion==1.0.0"]
 cuda = [
   "torch==2.9.1+cu128",
   "torchvision==0.24.1",
   "pytorch-triton",
   "helion==1.0.0",
 ]
-mlir = [
-  "lighthouse[ingress_torch_mlir]",
-  "ml-dtypes",
-]
+mlir = ["lighthouse[ingress_torch_mlir]", "ml-dtypes"]
 # If triton-cpu build fails with a stale LLVM path, clear caches:
 #   rm -r ~/.triton/llvm
 #   rm -r ~/.cache/uv/git-v0/checkouts/*/[triton rev hash]/build
@@ -79,13 +76,7 @@ triton-cpu = [
 ]
 
 [dependency-groups]
-dev = [
-  "ruff==0.14.10",
-  "pre-commit",
-  "pytest",
-  "pytest-timeout",
-  "mypy",
-]
+dev = ["ruff==0.14.10", "pre-commit", "pytest", "pytest-timeout", "mypy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -107,14 +98,12 @@ conflicts = [
     { extra = "triton-cpu" },
   ],
 ]
-override-dependencies = [
-  "mlir-python-bindings==20260407+164505d34",
-]
+override-dependencies = ["mlir-python-bindings==20260407+164505d34"]
 
 [tool.uv.sources]
 torch = { index = "pytorch" }
-pytorch-triton-xpu = { index = "pytorch" }
-pytorch-triton = { index = "pytorch" }
+pytorch-triton-xpu = { index = "nightly" }
+pytorch-triton = { index = "nightly" }
 triton = { git = "https://github.com/triton-lang/triton-cpu.git", rev = "270e696" }
 lighthouse = { git = "https://github.com/llvm/lighthouse", rev = "456475d" }
 mlir-python-bindings = { index = "eudsl" }
@@ -122,6 +111,11 @@ mlir-python-bindings = { index = "eudsl" }
 [[tool.uv.index]]
 name = "pytorch"
 url = "https://download.pytorch.org/whl"
+explicit = true
+
+[[tool.uv.index]]
+name = "nightly"
+url = "https://download.pytorch.org/whl/nightly/xpu"
 explicit = true
 
 [[tool.uv.index]]
@@ -138,7 +132,7 @@ include = ["ai_bench*"]
 ai_bench = ["py.typed"]
 
 [tool.setuptools.dynamic]
-version = {attr = "ai_bench.__version__"}
+version = { attr = "ai_bench.__version__" }
 
 [tool.mypy]
 python_version = "3.10"
@@ -169,35 +163,39 @@ quote-style = "double"
 [tool.ruff.lint]
 preview = true
 select = [
-  "A", # builtin shadowing
-  "D419", # empty-docstring
-  "E", # Error
-  "F", # Pyflakes
-  "I", # isort
-  "N801", # invalid-class-name
-  "N804", # cls for class methods
-  "N805", # self for methods
-  "N818", # error-suffix-on-exception-name
-  "N999", # invalid-module-name
-  "PERF", # Perflint
+  "A",      # builtin shadowing
+  "D419",   # empty-docstring
+  "E",      # Error
+  "F",      # Pyflakes
+  "I",      # isort
+  "N801",   # invalid-class-name
+  "N804",   # cls for class methods
+  "N805",   # self for methods
+  "N818",   # error-suffix-on-exception-name
+  "N999",   # invalid-module-name
+  "PERF",   # Perflint
   "RUF022", # __all__ is not sorted
   "RUF030", # print() call in assert
   "RUF034", # useless if-else
   "RUF047", # empty else
   "RUF200", # invalid pyproject.toml
-  "W", # Warning
+  "W",      # Warning
 ]
 ignore = [
-    "E501", # line-too-long
-    "PERF203", # try-except-in-loop
-    "PERF401", # manual-list-comprehension
+  "E501",    # line-too-long
+  "PERF203", # try-except-in-loop
+  "PERF401", # manual-list-comprehension
 ]
 
 [tool.ruff.lint.isort]
 known-local-folder = ["ai_bench"]
 known-third-party = [
-  "torch", "triton", "helion",
-  "mlir", "lighthouse", "torch_mlir",
+  "torch",
+  "triton",
+  "helion",
+  "mlir",
+  "lighthouse",
+  "torch_mlir",
 ]
-force-single-line = true  # Improves merge conflicts
+force-single-line = true # Improves merge conflicts
 force-sort-within-sections = true
